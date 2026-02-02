@@ -1,0 +1,105 @@
+import time
+import os
+from DrissionPage import ChromiumPage, ChromiumOptions
+
+# 从环境变量获取配置
+USERNAME = os.environ.get("LINUXDO_USER")
+PASSWORD = os.environ.get("LINUXDO_PASS")
+
+def login():
+    # 配置浏览器选项
+    co = ChromiumOptions()
+    # 设置代理 (GitHub Action 中运行的 Xray 监听端口)
+    co.set_proxy('socks5://127.0.0.1:10808')
+    
+    # 关键：无头模式下的一些伪装配置，尝试绕过检测
+    # 注意：在对抗高强度 CF 时，有时有头模式(HEADLESS=False)配合 xvfb 效果更好
+    # 但 GitHub Action 限制资源，我们先尝试针对 Linux 优化的配置
+    co.set_argument('--no-sandbox')
+    co.set_argument('--disable-gpu')
+    co.set_headless(True) # 开启无头模式
+    
+    # 设置用户代理，模拟真实 Mac 或 Win 用户
+    co.set_user_agent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+
+    print("正在启动浏览器...")
+    page = ChromiumPage(co)
+
+    try:
+        print("正在访问 Linux.do...")
+        page.get('https://linux.do/')
+        
+        # 1. 处理 Cloudflare 5秒盾 (Turnstile)
+        # DrissionPage 通常能自动处理部分，但有时需要显式等待
+        print("检查 Cloudflare 盾...")
+        time.sleep(5) 
+        
+        # 如果检测到 Turnstile iframe，尝试点击
+        if page.ele('xpath://iframe[starts-with(@src, "https://challenges.cloudflare.com/")]'):
+            print("检测到 Cloudflare 挑战，尝试等待通过...")
+            time.sleep(10)
+        
+        title = page.title
+        print(f"当前页面标题: {title}")
+        
+        if "Just a moment" in title or "Attention Required" in title:
+            print("ERROR: 未能通过 Cloudflare 拦截，脚本终止。建议更换更优质的 VLESS IP。")
+            page.get_screenshot(path='error_cf.png')
+            return
+
+        # 2. 点击登录按钮
+        # Discourse 的登录通常是一个“登录”按钮，点击后弹出模态框
+        print("寻找登录按钮...")
+        # 尝试匹配中文或英文按钮
+        login_btn = page.ele('css:.login-button') or page.ele('text:登录') or page.ele('text:Log In')
+        
+        if login_btn:
+            login_btn.click()
+            print("点击了登录按钮，等待模态框...")
+            time.sleep(2)
+        else:
+            print("未找到登录按钮，可能已登录或页面加载异常。")
+            page.get_screenshot(path='error_no_btn.png')
+            # 尝试直接访问 login 路径
+            page.get('https://linux.do/login')
+            time.sleep(3)
+
+        # 3. 输入账号密码
+        print("正在输入账号密码...")
+        user_input = page.ele('css:#login-account-name')
+        pass_input = page.ele('css:#login-account-password')
+        
+        if user_input and pass_input:
+            user_input.input(USERNAME)
+            time.sleep(0.5)
+            pass_input.input(PASSWORD)
+            time.sleep(0.5)
+            
+            # 点击提交
+            submit_btn = page.ele('css:#login-button')
+            if submit_btn:
+                submit_btn.click()
+                print("提交登录表单...")
+                time.sleep(5)
+                
+                # 4. 验证登录结果
+                # 检查是否有头像元素出现
+                if page.ele('css:#current-user'):
+                    print("SUCCESS: 登录成功！")
+                else:
+                    print("WARNING: 未检测到登录后的用户头像，可能需要二步验证或登录失败。")
+            else:
+                print("未找到提交按钮。")
+        else:
+            print("未找到输入框，可能是 IP 被风控导致不显示登录框。")
+
+    except Exception as e:
+        print(f"发生异常: {e}")
+    finally:
+        # 截图保存状态，方便在 GitHub Artifacts 查看
+        page.get_screenshot(path='final_state.png')
+        print("截图已保存。")
+        page.quit()
+
+if __name__ == "__main__":
+    login()
