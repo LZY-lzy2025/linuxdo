@@ -24,8 +24,8 @@ jobs:
 
     - name: Setup Xray Proxy (VLESS)
       run: |
-        # 1. 下载 Xray
-        wget [https://github.com/XTLS/Xray-core/releases/download/v1.8.6/Xray-linux-64.zip](https://github.com/XTLS/Xray-core/releases/download/v1.8.6/Xray-linux-64.zip)
+        # 1. 下载 Xray (修复了这里的链接格式错误)
+        wget https://github.com/XTLS/Xray-core/releases/download/v1.8.6/Xray-linux-64.zip
         unzip Xray-linux-64.zip
         chmod +x xray
         
